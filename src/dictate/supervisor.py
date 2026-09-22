@@ -22,6 +22,9 @@ class Supervisor:
         self.worker: subprocess.Popen | None = None
         self.ready = threading.Event()
         self.recording = False
+        # on Windows poll() runs on a background thread while menu clicks
+        # call start()/stop() on another, so these must not interleave
+        self.lock = threading.Lock()
 
     @property
     def state(self) -> str:
@@ -38,7 +41,13 @@ class Supervisor:
             self.stop()
 
     def start(self) -> None:
+        with self.lock:
+            self._start()
+        self.on_change()
+
+    def _start(self) -> None:
         self.error = None
+        self.recording = False
         self.ready = threading.Event()
         self.worker = subprocess.Popen(
             [
@@ -52,11 +61,13 @@ class Supervisor:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             text=True,
+            # Windows would otherwise decode with the ANSI code page
+            encoding="utf-8",
+            errors="replace",
         )
         threading.Thread(
             target=self.read, args=(self.worker, self.ready), daemon=True
         ).start()
-        self.on_change()
 
     def read(self, worker: subprocess.Popen, ready: threading.Event) -> None:
         # everything else on stdout is thrown away — r2t2_asr prints the
@@ -74,6 +85,11 @@ class Supervisor:
             self.on_change()
 
     def stop(self) -> None:
+        with self.lock:
+            self._stop()
+        self.on_change()
+
+    def _stop(self) -> None:
         if self.worker is None:
             return
         # killing the process is what hands the ~4.5 GB back
@@ -84,29 +100,40 @@ class Supervisor:
             self.worker.kill()
         self.worker = None
         self.recording = False
-        self.on_change()
 
     def set_mode(self, mode: str) -> None:
-        if mode == self.mode:
-            return
-        self.mode = mode
-        # each mode is a different model, so switching means a fresh worker
-        if self.worker is not None:
-            self.stop()
-            self.start()
+        with self.lock:
+            if mode == self.mode:
+                return
+            self.mode = mode
+            # each mode is a different model, so switching means a fresh worker
+            if self.worker is not None:
+                self._stop()
+                self._start()
         self.on_change()
 
     def set_streaming(self, on: bool) -> None:
-        self.streaming = on
-        # same model either way, so the worker just gets told — no reload
-        if self.worker is not None:
-            self.worker.stdin.write(f"STREAM {'ON' if on else 'OFF'}\n")
-            self.worker.stdin.flush()
+        with self.lock:
+            self.streaming = on
+            # same model either way, so the worker just gets told — no reload
+            if self.worker is not None:
+                self.worker.stdin.write(f"STREAM {'ON' if on else 'OFF'}\n")
+                self.worker.stdin.flush()
         self.on_change()
 
     def poll(self) -> None:
         """Call from a timer: notices a worker that died on its own."""
-        if self.worker is not None and self.worker.poll() is not None:
+        with self.lock:
+            worker = self.worker
+            if worker is None or worker.poll() is None:
+                return
             self.worker = None
             self.recording = False
-            self.on_change()
+            # stop() clears self.worker before this can see it, so an exit
+            # here was unexpected. A crash without an ERROR line (OOM, a
+            # failed download) would otherwise just turn the icon grey.
+            if worker.returncode != 0 and self.error is None:
+                self.error = (
+                    f"worker stopped (exit {worker.returncode}), see the terminal"
+                )
+        self.on_change()
