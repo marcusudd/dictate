@@ -90,9 +90,10 @@ class Tray:
         state = self.sup.state
         self.icon.icon = dot(COLORS[state])
         label = MODES[self.sup.mode][0]
-        self.icon.title = (
-            f"Dictate – {label}" if state != "error" else f"Dictate – {self.sup.error}"
-        )
+        # the full error is a row in the menu; the tooltip only says where to
+        # look, since Windows raises ValueError on titles over 127 chars
+        title = f"Dictate – {label}" if state != "error" else "Dictate – fel, se menyn"
+        self.icon.title = title[:127]
         self.icon.update_menu()
 
     def poll_forever(self) -> None:

@@ -202,6 +202,8 @@ def listen_to_parent(ptt: PushToTalk) -> None:
 
 
 def main() -> None:
+    # a piped stdout on Windows is cp1252, and r2t2_asr prints transcripts there
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser()
     parser.add_argument("--mode", choices=MODES, default="auto")
     parser.add_argument("--stream", action="store_true")
@@ -210,7 +212,8 @@ def main() -> None:
     try:
         ptt = PushToTalk(Settings(), args.mode, args.stream)
     except ValueError as err:
-        print(f"ERROR {err}", flush=True)
+        # the parent reads one line per message
+        print(f"ERROR {' '.join(str(err).split())}", flush=True)
         sys.exit(1)
     threading.Thread(target=listen_to_parent, args=(ptt,), daemon=True).start()
     threading.Thread(target=ptt.transcribe_forever, daemon=True).start()

@@ -30,7 +30,9 @@ class Whisper:
         device: torch.device,
         dtype: torch.dtype,
     ) -> None:
-        # float16 is what the benchmarks ran with on MPS; CPU has no half kernels
+        # float16 is what the benchmarks ran with on MPS; CPU has no half kernels.
+        # The dtype argument is ignored on purpose: Whisper runs float16 on any
+        # GPU, including where device.pick() would say bfloat16.
         self.device = device
         self.dtype = torch.float32 if device.type == "cpu" else torch.float16
         self.processor = WhisperProcessor.from_pretrained(model_id)
