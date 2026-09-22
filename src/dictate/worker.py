@@ -10,6 +10,8 @@ import numpy as np
 import sounddevice as sd
 from pynput import keyboard
 
+from dictate import device as device_mod
+from dictate import models
 from dictate.asr import SAMPLE_RATE, load_model
 from dictate.config import Settings
 from dictate.whisper import Whisper
@@ -29,12 +31,19 @@ class PushToTalk:
         self.mode = mode
         # Whisper modes only, flipped from the menu bar between utterances
         self.streaming = streaming
+        dev, dtype = device_mod.pick(settings.device)
+        print(
+            f"device {dev.type} dtype {str(dtype).removeprefix('torch.')}",
+            file=sys.stderr,
+            flush=True,
+        )
+        models.check(mode, getattr(settings, f"{mode}_model"))
         if mode == "en":
-            self.asr = load_model(settings)
+            self.asr = load_model(settings, dev, dtype)
         elif mode == "sv":
-            self.whisper = Whisper(settings.sv_model, ["sv"])
+            self.whisper = Whisper(settings.sv_model, ["sv"], dev, dtype)
         else:
-            self.whisper = Whisper(settings.auto_model, ["sv", "en"])
+            self.whisper = Whisper(settings.auto_model, ["sv", "en"], dev, dtype)
         self.keys = keyboard.Controller()
         self.audio: queue.Queue[np.ndarray | None] = queue.Queue()
         self.stream: sd.InputStream | None = None
@@ -199,7 +208,11 @@ def main() -> None:
     parser.add_argument("--stream", action="store_true")
     args = parser.parse_args()
 
-    ptt = PushToTalk(Settings(), args.mode, args.stream)
+    try:
+        ptt = PushToTalk(Settings(), args.mode, args.stream)
+    except ValueError as err:
+        print(f"ERROR {err}", flush=True)
+        sys.exit(1)
     threading.Thread(target=listen_to_parent, args=(ptt,), daemon=True).start()
     threading.Thread(target=ptt.transcribe_forever, daemon=True).start()
     print("READY", flush=True)

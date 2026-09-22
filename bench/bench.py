@@ -48,7 +48,9 @@ elif mode == "direct":
 else:
     from transformers import pipeline
 
-    pipe = pipeline("automatic-speech-recognition", model=model_id, device="mps",
+    from dictate import device as device_mod
+
+    pipe = pipeline("automatic-speech-recognition", model=model_id, device=device_mod.pick("auto")[0],
                     dtype=torch.float16)
     pipe(np.zeros(16000, dtype=np.float32))  # warmup
 

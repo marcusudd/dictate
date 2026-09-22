@@ -42,9 +42,11 @@ class HFGenerate:
         return [types.SimpleNamespace(outputs=[types.SimpleNamespace(text=text)])]
 
 
-def load_model(settings: Settings) -> R2T2ASRModel:
+def load_model(
+    settings: Settings, device: torch.device, dtype: torch.dtype
+) -> R2T2ASRModel:
     asr = R2T2ASRModel.from_pretrained(
-        settings.en_model, dtype=torch.bfloat16, device_map="mps"
+        settings.en_model, dtype=dtype, device_map=str(device)
     )
     # r2t2_asr refuses to stream unless backend is "vllm", but the only vLLM
     # thing it actually touches is model.generate

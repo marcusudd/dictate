@@ -23,11 +23,20 @@ class Whisper:
     clip, which KB-Whisper does on noise without speech.
     """
 
-    def __init__(self, model_id: str, languages: list[str]) -> None:
+    def __init__(
+        self,
+        model_id: str,
+        languages: list[str],
+        device: torch.device,
+        dtype: torch.dtype,
+    ) -> None:
+        # float16 is what the benchmarks ran with on MPS; CPU has no half kernels
+        self.device = device
+        self.dtype = torch.float32 if device.type == "cpu" else torch.float16
         self.processor = WhisperProcessor.from_pretrained(model_id)
         self.model = WhisperForConditionalGeneration.from_pretrained(
-            model_id, dtype=torch.float16
-        ).to("mps")
+            model_id, dtype=self.dtype
+        ).to(device)
         ids = self.processor.tokenizer.convert_tokens_to_ids
         self.sot = ids("<|startoftranscript|>")
         self.task = [ids("<|transcribe|>"), ids("<|notimestamps|>")]
@@ -56,16 +65,16 @@ class Whisper:
     def transcribe_window(self, audio: np.ndarray) -> str:
         features = self.processor(
             audio, sampling_rate=SAMPLE_RATE, return_tensors="pt"
-        ).input_features.to("mps", torch.float16)
+        ).input_features.to(self.device, self.dtype)
         encoded = self.model.get_encoder()(features)
 
         # picks between our languages only, so Swedish can't come out as
         # Norwegian or Danish
-        sot = torch.tensor([[self.sot]], device="mps")
+        sot = torch.tensor([[self.sot]], device=self.device)
         logits = self.model(encoder_outputs=encoded, decoder_input_ids=sot).logits
         language = max(self.languages, key=lambda token: logits[0, -1, token].item())
 
-        prompt = torch.tensor([[self.sot, language, *self.task]], device="mps")
+        prompt = torch.tensor([[self.sot, language, *self.task]], device=self.device)
         # GenerationMixin.generate skips Whisper's long-form loop
         out = GenerationMixin.generate(
             self.model,
