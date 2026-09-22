@@ -36,7 +36,8 @@ def gui_thread_runner() -> Callable[[Callable[[], None]], None]:
                 "dictate needs PyGObject for the tray icon. Install python3-gi "
                 "and gir1.2-ayatanaappindicator3-0.1 (Debian/Ubuntu) or "
                 "python3-gobject and libayatana-appindicator-gtk3 (Fedora), then "
-                "create the venv with `uv venv --system-site-packages` before "
+                "create the venv on the distro's own Python with `uv venv "
+                "--system-site-packages --python /usr/bin/python3` before "
                 "`uv sync`."
             )
         return lambda fn: GLib.idle_add(fn)
