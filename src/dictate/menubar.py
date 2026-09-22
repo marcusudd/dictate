@@ -1,37 +1,32 @@
 import argparse
-import subprocess
-import sys
-import threading
 
 import rumps
 from PyObjCTools import AppHelper
+
+from dictate.supervisor import MODES, Supervisor
 
 TITLE_OFF = "◯"
 TITLE_LOADING = "⏳"
 TITLE_ON = "🎙"
 TITLE_RECORDING = "🔴"
-
-# mode -> (menu label, shown next to the mic when on)
-MODES = {
-    "auto": ("Auto (svenska + engelska)", ""),
-    "sv": ("Svenska", " SV"),
-    "en": ("English (live)", " EN"),
-}
+TITLE_ERROR = "⚠️"
 
 
 class DictateApp(rumps.App):
     def __init__(self) -> None:
         super().__init__("Dictate", title=TITLE_OFF, quit_button=None)
+        # supervisor callbacks come from its reader thread; AppKit wants the main one
+        self.sup = Supervisor(lambda: AppHelper.callAfter(self.refresh))
         self.toggle_item = rumps.MenuItem("Diktering", callback=self.toggle)
-        self.mode = "auto"
         self.mode_items = {
             mode: rumps.MenuItem(label, callback=self.pick_mode)
             for mode, (label, _) in MODES.items()
         }
-        self.streaming = False
         self.stream_item = rumps.MenuItem(
             "Streaming (text medan du pratar)", callback=self.toggle_streaming
         )
+        self.error_item = rumps.MenuItem("")
+        self.error_item.set_callback(None)
         self.menu = [
             self.toggle_item,
             None,
@@ -39,102 +34,49 @@ class DictateApp(rumps.App):
             None,
             self.stream_item,
             None,
+            self.error_item,
             rumps.MenuItem("Avsluta", callback=self.quit),
         ]
-        self.worker: subprocess.Popen | None = None
-        self.ready = threading.Event()
-        self.recording = False
-        self.timer = rumps.Timer(self.refresh, 0.5)
+        self.timer = rumps.Timer(self.tick, 0.5)
         self.timer.start()
 
     def toggle(self, sender: rumps.MenuItem) -> None:
-        if self.worker is None:
-            self.start_worker()
-        else:
-            self.stop_worker()
+        self.sup.toggle()
 
     def pick_mode(self, sender: rumps.MenuItem) -> None:
         mode = next(m for m, item in self.mode_items.items() if item is sender)
-        if mode == self.mode:
-            return
-        self.mode = mode
-        # each mode is a different model, so switching means a fresh worker
-        if self.worker is not None:
-            self.stop_worker()
-            self.start_worker()
+        self.sup.set_mode(mode)
 
     def toggle_streaming(self, sender: rumps.MenuItem) -> None:
-        self.streaming = not self.streaming
-        # same model either way, so the worker just gets told — no reload
-        if self.worker is not None:
-            self.worker.stdin.write(f"STREAM {'ON' if self.streaming else 'OFF'}\n")
-            self.worker.stdin.flush()
+        self.sup.set_streaming(not self.sup.streaming)
 
-    def start_worker(self) -> None:
-        self.ready = threading.Event()
-        self.worker = subprocess.Popen(
-            [
-                sys.executable,
-                "-m",
-                "dictate.worker",
-                "--mode",
-                self.mode,
-                *(["--stream"] if self.streaming else []),
-            ],
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            text=True,
-        )
-        threading.Thread(
-            target=self.read_worker, args=(self.worker, self.ready), daemon=True
-        ).start()
+    def tick(self, timer: rumps.Timer) -> None:
+        self.sup.poll()
+        self.refresh()
 
-    def read_worker(self, worker: subprocess.Popen, ready: threading.Event) -> None:
-        # everything else on stdout is thrown away — r2t2_asr prints the
-        # transcribed text there
-        for line in worker.stdout:
-            line = line.strip()
-            if line == "READY":
-                ready.set()
-            elif line in ("REC", "IDLE") and worker is self.worker:
-                self.recording = line == "REC"
-                # straight to the main thread, the 0.5 s timer is too slow for this
-                AppHelper.callAfter(self.refresh)
-
-    def stop_worker(self) -> None:
-        # killing the process is what hands the ~4.5 GB back
-        self.worker.terminate()
-        try:
-            self.worker.wait(timeout=3)
-        except subprocess.TimeoutExpired:
-            self.worker.kill()
-        self.worker = None
-        self.recording = False
-
-    def refresh(self, timer: rumps.Timer | None = None) -> None:
-        if self.worker is not None and self.worker.poll() is not None:
-            self.worker = None
-            self.recording = False
-        if self.worker is None:
-            self.title = TITLE_OFF
-        elif self.recording:
-            self.title = TITLE_RECORDING + MODES[self.mode][1]
-        elif self.ready.is_set():
-            self.title = TITLE_ON + MODES[self.mode][1]
-        else:
-            self.title = TITLE_LOADING
-        self.toggle_item.state = self.worker is not None
+    def refresh(self) -> None:
+        state = self.sup.state
+        suffix = MODES[self.sup.mode][1]
+        self.title = {
+            "off": TITLE_OFF,
+            "loading": TITLE_LOADING,
+            "on": TITLE_ON + suffix,
+            "recording": TITLE_RECORDING + suffix,
+            "error": TITLE_ERROR,
+        }[state]
+        self.toggle_item.state = self.sup.worker is not None
         for mode, item in self.mode_items.items():
-            item.state = mode == self.mode
+            item.state = mode == self.sup.mode
         # English is always live, the switch only means something for Whisper
-        self.stream_item.state = self.streaming or self.mode == "en"
+        self.stream_item.state = self.sup.streaming or self.sup.mode == "en"
         self.stream_item.set_callback(
-            None if self.mode == "en" else self.toggle_streaming
+            None if self.sup.mode == "en" else self.toggle_streaming
         )
+        self.error_item.title = self.sup.error or ""
+        self.error_item.hidden = self.sup.error is None
 
     def quit(self, sender: rumps.MenuItem) -> None:
-        if self.worker is not None:
-            self.stop_worker()
+        self.sup.stop()
         rumps.quit_application()
 
 
@@ -147,5 +89,5 @@ def main() -> None:
 
     app = DictateApp()
     if args.on:
-        app.start_worker()
+        app.sup.start()
     app.run()
