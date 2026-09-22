@@ -22,7 +22,8 @@ happened (OS, GPU, Python, and the terminal output), or send a PR.
 - Python 3.12 and [uv](https://docs.astral.sh/uv/)
 - RAM for the model: 3–6 GB, see Modes
 - A GPU is what makes it usable. Apple Silicon or an NVIDIA card. It runs on
-  CPU too, but expect several seconds per sentence.
+  CPU too — on a laptop CPU (Intel i5-class, Ubuntu) Auto mode took about
+  12–13 s to transcribe a 10 s clip.
 
 ### macOS
 
