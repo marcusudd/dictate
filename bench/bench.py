@@ -12,12 +12,15 @@ import numpy as np
 import soundfile as sf
 import torch
 
+from dictate import device as device_mod
+
 key, model_id, mode = sys.argv[1:4]
 forced = len(sys.argv) > 4 and mode != "direct"
 LANG = {"sv_se": ("Swedish", "swedish"), "en_us": ("English", "english")}
 CHUNK = 0.32
 
 manifest = json.load(open("data/manifest.json"))
+dev, dtype = device_mod.pick("auto")
 
 
 def norm(text: str) -> list[str]:
@@ -38,19 +41,17 @@ if mode.startswith("qwen"):
     from dictate.asr import load_model
     from dictate.config import Settings
 
-    asr = load_model(Settings(en_model=model_id))
+    asr = load_model(Settings(en_model=model_id), dev, dtype)
     if mode == "qwen-offline":
         asr.model.max_new_tokens = 512
 elif mode == "direct":
     from dictate.whisper import Whisper
 
-    whisper = Whisper(model_id, sys.argv[4].split(","))
+    whisper = Whisper(model_id, sys.argv[4].split(","), dev, dtype)
 else:
     from transformers import pipeline
 
-    from dictate import device as device_mod
-
-    pipe = pipeline("automatic-speech-recognition", model=model_id, device=device_mod.pick("auto")[0],
+    pipe = pipeline("automatic-speech-recognition", model=model_id, device=dev,
                     dtype=torch.float16)
     pipe(np.zeros(16000, dtype=np.float32))  # warmup
 

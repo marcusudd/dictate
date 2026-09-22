@@ -11,6 +11,7 @@ import time
 import numpy as np
 import soundfile as sf
 
+from dictate import device as device_mod
 from dictate.whisper import Whisper
 from dictate.worker import same_word, untyped_start
 
@@ -38,7 +39,8 @@ def edits(ref: list[str], hyp: list[str]) -> int:
     return d[-1]
 
 
-whisper = Whisper(model_id, langs)
+dev, dtype = device_mod.pick("auto")
+whisper = Whisper(model_id, langs, dev, dtype)
 rows = []
 for m in manifest:
     wav, _ = sf.read(m["path"], dtype="float32")
