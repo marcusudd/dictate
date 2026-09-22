@@ -13,6 +13,12 @@ WINDOW_SEC = 30
 # model is this unsure about gets dropped. Its own no-speech token is useless
 # for this: it stays at 0 even on pure silence.
 MIN_AVG_LOGPROB = -0.7
+# Whisper leans English on short audio, and picking English for Swedish speech
+# makes it translate. On the 25 Swedish FLEURS clips cut to 2 s, English won 5
+# times; on full clips never. English speech still scores at least 3 below
+# Swedish at 1 s, so the first language gets a head start of 3. That leaves 0
+# of 25 English clips going wrong at any length, and 1 Swedish clip at 1.5–2 s.
+FIRST_LANGUAGE_HEAD_START = 3.0
 
 
 class Whisper:
@@ -74,7 +80,9 @@ class Whisper:
         # Norwegian or Danish
         sot = torch.tensor([[self.sot]], device=self.device)
         logits = self.model(encoder_outputs=encoded, decoder_input_ids=sot).logits
-        language = max(self.languages, key=lambda token: logits[0, -1, token].item())
+        scores = {token: logits[0, -1, token].item() for token in self.languages}
+        scores[self.languages[0]] += FIRST_LANGUAGE_HEAD_START
+        language = max(scores, key=scores.get)
 
         prompt = torch.tensor([[self.sot, language, *self.task]], device=self.device)
         # GenerationMixin.generate skips Whisper's long-form loop
