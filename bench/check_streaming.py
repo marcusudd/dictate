@@ -10,7 +10,8 @@ import soundfile as sf
 
 import dictate.worker as worker
 from dictate.config import Settings
-from dictate.worker import BLOCK_SAMPLES, PushToTalk
+from dictate.sources import BLOCK_SAMPLES
+from dictate.worker import PushToTalk
 
 mode = sys.argv[1]
 read = lambda p: sf.read(p, dtype="int16")[0]

@@ -13,7 +13,7 @@ from dictate import device as device_mod
 from dictate import models
 from dictate.asr import SAMPLE_RATE, load_model
 from dictate.config import Settings
-from dictate.sources import BLOCK_SAMPLES, Microphone
+from dictate.sources import Microphone
 from dictate.whisper import Whisper
 
 MODES = ["auto", "sv", "en"]

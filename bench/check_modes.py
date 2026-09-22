@@ -7,7 +7,8 @@ import numpy as np
 import soundfile as sf
 
 from dictate.config import Settings
-from dictate.worker import BLOCK_SAMPLES, PushToTalk
+from dictate.sources import BLOCK_SAMPLES
+from dictate.worker import PushToTalk
 
 
 class FakeKeys:
