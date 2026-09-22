@@ -32,7 +32,7 @@ print(f"[{mode}] feeding 3 all-zero blocks, then speech", flush=True)
 for n, i in enumerate(range(0, len(silent_start), BLOCK_SAMPLES)):
     if n == 3:
         print(f"[{mode}] (first real block goes in now; hearing so far = {ptt.hearing})", flush=True)
-    ptt.on_audio(silent_start[i:i + BLOCK_SAMPLES].reshape(-1, 1), BLOCK_SAMPLES, None, None)
+    ptt.on_block(silent_start[i:i + BLOCK_SAMPLES])
 ptt.audio.put(None)
 t0 = time.perf_counter()
 ptt.transcribe_live() if mode == "en" else ptt.transcribe_on_release()

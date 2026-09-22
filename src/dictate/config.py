@@ -1,8 +1,14 @@
+import sys
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DICTATE_")
+
+    # pynput key name. Right Alt is AltGr on Swedish PC layouts, so it's
+    # only the default on the Mac
+    hotkey: str = "alt_r" if sys.platform == "darwin" else "ctrl_r"
 
     # auto: Whisper turbo, picks Swedish or English per utterance, types on release
     auto_model: str = "openai/whisper-large-v3-turbo"

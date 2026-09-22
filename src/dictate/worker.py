@@ -7,22 +7,18 @@ import threading
 import time
 
 import numpy as np
-import sounddevice as sd
 from pynput import keyboard
 
 from dictate import device as device_mod
 from dictate import models
 from dictate.asr import SAMPLE_RATE, load_model
 from dictate.config import Settings
+from dictate.sources import BLOCK_SAMPLES, Microphone
 from dictate.whisper import Whisper
 
-HOTKEY = keyboard.Key.alt_r
 MODES = ["auto", "sv", "en"]
 # shorter than this is a slip on the key, not speech
 MIN_UTTERANCE_SEC = 0.4
-# small blocks so the first one shows up ~80 ms after the key goes down
-# instead of after a full 320 ms chunk
-BLOCK_SAMPLES = 512
 
 
 class PushToTalk:
@@ -31,6 +27,18 @@ class PushToTalk:
         self.mode = mode
         # Whisper modes only, flipped from the menu bar between utterances
         self.streaming = streaming
+        try:
+            key = keyboard.Key[settings.hotkey]
+        except KeyError:
+            names = ", ".join(sorted(keyboard.Key.__members__))
+            raise ValueError(
+                f"DICTATE_HOTKEY={settings.hotkey!r}, expected one of {names}"
+            )
+        self.hotkeys = {key}
+        # Windows reports right Alt as alt_gr on layouts where it's AltGr
+        alt_gr = getattr(keyboard.Key, "alt_gr", None)
+        if key == keyboard.Key.alt_r and alt_gr is not None:
+            self.hotkeys.add(alt_gr)
         dev, dtype = device_mod.pick(settings.device)
         print(
             f"device {dev.type} dtype {str(dtype).removeprefix('torch.')}",
@@ -46,41 +54,32 @@ class PushToTalk:
             self.whisper = Whisper(settings.auto_model, ["sv", "en"], dev, dtype)
         self.keys = keyboard.Controller()
         self.audio: queue.Queue[np.ndarray | None] = queue.Queue()
-        self.stream: sd.InputStream | None = None
+        self.mic: Microphone | None = None
         self.hearing = False
 
     def on_press(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
-        if key != HOTKEY or self.stream is not None:
+        if key not in self.hotkeys or self.mic is not None:
             return
         self.hearing = False
-        self.stream = sd.InputStream(
-            samplerate=SAMPLE_RATE,
-            channels=1,
-            dtype="int16",
-            blocksize=BLOCK_SAMPLES,
-            callback=self.on_audio,
-        )
-        self.stream.start()
+        self.mic = Microphone(self.on_block)
+        self.mic.start()
 
     def on_release(self, key: keyboard.Key | keyboard.KeyCode | None) -> None:
-        if key != HOTKEY or self.stream is None:
+        if key not in self.hotkeys or self.mic is None:
             return
-        self.stream.stop()
-        self.stream.close()
-        self.stream = None
+        self.mic.stop()
+        self.mic = None
         self.audio.put(None)
         print("IDLE", flush=True)
 
-    def on_audio(
-        self, indata: np.ndarray, frames: int, time: object, status: sd.CallbackFlags
-    ) -> None:
+    def on_block(self, block: np.ndarray) -> None:
         # REC is what lights the red dot in the menu bar, so it only goes out
         # once real samples arrive. A mic that's still starting up or has no
         # permission delivers pure zeros.
-        if not self.hearing and indata.any():
+        if not self.hearing and block.any():
             self.hearing = True
             print("REC", flush=True)
-        self.audio.put(indata[:, 0].copy())
+        self.audio.put(block)
 
     def transcribe_forever(self) -> None:
         while True:

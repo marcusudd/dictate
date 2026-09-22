@@ -47,7 +47,7 @@ for name, wav in clips.items():
     def feed() -> None:
         for n, i in enumerate(range(0, len(wav), BLOCK_SAMPLES)):
             time.sleep(max(0, t0 + (n + 1) * BLOCK_SAMPLES / 16000 - time.monotonic()))
-            ptt.on_audio(wav[i:i + BLOCK_SAMPLES].reshape(-1, 1), BLOCK_SAMPLES, None, None)
+            ptt.on_block(wav[i:i + BLOCK_SAMPLES])
         ptt.audio.put(None)
 
     threading.Thread(target=feed).start()
