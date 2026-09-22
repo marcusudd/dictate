@@ -1,34 +1,102 @@
 # dictate
 
-Hold right Option, talk, and the text lands wherever the cursor is. Everything
-runs locally on the Mac GPU (MPS) — no server, nothing leaves the machine.
+Hold a key, talk, and the text lands wherever the cursor is. Swedish and
+English. Everything runs on your own machine — no server, no account,
+nothing leaves the computer.
+
+Built on a Mac, being ported to Linux and Windows. Here's where that stands:
+
+| | Status |
+|---|---|
+| macOS, Apple Silicon (MPS) | Used daily. All modes, streaming, menu bar. |
+| Linux, CPU, X11 | Installs and transcribes. Tray icon only tried under Xvfb. |
+| Linux, NVIDIA (CUDA) | Should work, untested. |
+| Windows, NVIDIA (CUDA) | Written, never run. |
+| Wayland | Not supported — see Permissions. |
+
+If you try it on something in the lower rows, please open an issue with what
+happened (OS, GPU, Python, and the terminal output), or send a PR.
+
+## What you need
+
+- Python 3.12 and [uv](https://docs.astral.sh/uv/)
+- RAM for the model: 3–6 GB, see Modes
+- A GPU is what makes it usable. Apple Silicon or an NVIDIA card. It runs on
+  CPU too, but expect several seconds per sentence.
+
+### macOS
+
+Nothing extra. Three permissions are asked for on first run, see below.
+
+### Linux
+
+An X11 session (or XWayland, see Permissions), and these packages:
+
+```
+# Debian / Ubuntu
+sudo apt install libportaudio2 python3-gi gir1.2-ayatanaappindicator3-0.1
+# Fedora
+sudo dnf install portaudio python3-gobject libayatana-appindicator-gtk3
+```
+
+PyGObject has no wheels, so the venv has to see the system copy:
+
+```
+uv venv --system-site-packages
+uv sync
+```
+
+GNOME hides tray icons by default; install the AppIndicator shell extension.
+KDE and most others show them out of the box.
+
+NVIDIA: driver 580 or newer (CUDA 13). GTX 10xx and older aren't supported
+by CUDA 13 — see Settings for the cu126 switch.
+
+### Windows
+
+An NVIDIA driver 580 or newer if you have an NVIDIA card. `uv sync` fetches the
+CUDA build of PyTorch from pytorch.org (PyPI's Windows build is CPU-only).
+Nothing else.
 
 ## Run
 
 ```
+git clone https://github.com/marcusudd/dictate
+cd dictate
+uv sync            # Linux: after `uv venv --system-site-packages`
 uv run dictate
 ```
 
-A `◯` shows up in the menu bar. Click it → **Diktering** to load the model
-(`⏳`, 6–9 s). When it turns into `🎙` you're live: hold right Option while you
-talk, release when you're done.
+An icon shows up in the menu bar / tray. Click it → **Diktering** to load the
+model (6–9 s on a Mac, longer the first time while it downloads). When it
+shows a mic (macOS) or turns green (Linux/Windows) you're live: hold the
+hotkey while you talk, release when you're done.
 
-The mic turns into `🔴` while it's actually recording. That's not tied to the
-key press: it lights when the first real samples come in from the microphone
-(about 0.1 s after the key goes down), so if it's red, what you say is being
-captured. If it never turns red, the mic is delivering silence — usually a
-missing Microphone permission.
+The hotkey is **right Option** on a Mac and **right Ctrl** elsewhere (right Alt
+is AltGr on Swedish PC keyboards). `DICTATE_HOTKEY` changes it.
 
-Click **Diktering** again to turn it off. The model lives in its own process,
-and turning it off kills that process — that's what gives the RAM back. The
-menu bar app itself is tiny.
+While it's actually recording the icon goes red. That's not tied to the key:
+it lights when the first real samples arrive from the microphone, about 0.1 s
+after the key goes down. If it never goes red, the mic is delivering silence —
+usually a missing permission.
 
-`uv run dictate --on` skips the click and loads the model right away. I have
-a `dictate` shell function in `~/.zshrc` built on that: `dictate start` runs
-it in the background with dictation on (log in `~/Library/Logs/dictate.log`),
-and `dictate stop` quits the whole thing.
+Click **Diktering** again to turn it off. The model lives in its own process
+and turning it off kills that process — that's what gives the RAM back.
 
-Models are downloaded to `~/.cache/huggingface` the first time a mode is used.
+`uv run dictate --on` loads the model right away. A shell function like this
+makes it a background service:
+
+```zsh
+dictate() {
+  case "$1" in
+    start) pgrep -f "dictate --on" >/dev/null ||
+           (nohup uv run --project ~/projects/dictate dictate --on >>~/dictate.log 2>&1 &) ;;
+    stop)  pkill -f "dictate --on" ;;
+  esac
+}
+```
+
+Models download to `~/.cache/huggingface` the first time a mode is used.
 
 ## Modes
 
@@ -38,13 +106,14 @@ dictation is on restarts the worker with the other model.
 | Mode | Model | Text appears | Word errors sv / en | RAM |
 |---|---|---|---|---|
 | **Auto** (default) | Whisper large-v3-turbo | on release, ~0.4 s | 10 % / 5 % | 2.7 GB |
-| **Svenska** `🎙 SV` | KB-Whisper large | on release, ~1 s | 5 % / – | 3.7 GB |
-| **English (live)** `🎙 EN` | Confucius4-R2T2 | while you talk | – / 4 % | 5.2 GB |
+| **Svenska** | KB-Whisper large | on release, ~1 s | 5 % / – | 3.7 GB |
+| **English (live)** | Confucius4-R2T2 | while you talk | – / 4 % | 5.2 GB |
 
 Auto decides between Swedish and English for each utterance. Error rates are
 from 25 + 25 read-aloud FLEURS clips on an M4 Max, so treat them as a ranking,
 not a promise. R2T2 gets ~30 % of Swedish words wrong, which is why it only
-does English here.
+does English here. RAM is for MPS/CUDA in half precision; CPU runs in float32
+and needs roughly double.
 
 ### Streaming
 
@@ -72,15 +141,23 @@ Svenska turns English into Swedish, English turns Swedish into English.
 
 ## Permissions
 
-macOS asks for three things, all under System Settings → Privacy & Security:
+**macOS** asks for three things, all under System Settings → Privacy & Security:
 
 - **Accessibility** — to type the text
-- **Input Monitoring** — to see the right Option key
+- **Input Monitoring** — to see the hotkey
 - **Microphone**
 
 They're granted to whatever app launched `uv run dictate` (Terminal, VS Code,
 iTerm...), not to dictate itself. Without Accessibility the hotkey silently
 does nothing — the worker logs "This process is not trusted!".
+
+**Linux** needs an X server: the hotkey listener and the typing go through X11.
+Under Wayland only apps running through XWayland can be typed into, and the
+hotkey is only seen while such an app has focus. A proper Wayland path
+(evdev for the key, ydotool for typing) would be a welcome PR.
+
+**Windows** needs nothing, except that a normal (non-admin) dictate can't type
+into windows running as administrator.
 
 ## Settings
 
@@ -88,33 +165,77 @@ Environment variables, all optional:
 
 | Variable | Default | |
 |---|---|---|
-| `DICTATE_AUTO_MODEL` | `openai/whisper-large-v3-turbo` | HF repo id or local path |
-| `DICTATE_SV_MODEL` | `KBLab/kb-whisper-large` | |
-| `DICTATE_EN_MODEL` | `netease-youdao/Confucius4-R2T2` | |
+| `DICTATE_DEVICE` | `auto` | `cuda`, `mps` or `cpu`. auto tries them in that order |
+| `DICTATE_HOTKEY` | `alt_r` on macOS, `ctrl_r` elsewhere | a [pynput key name](https://pynput.readthedocs.io/en/latest/keyboard.html#pynput.keyboard.Key) |
+| `DICTATE_AUTO_MODEL` | `openai/whisper-large-v3-turbo` | any Whisper checkpoint |
+| `DICTATE_SV_MODEL` | `KBLab/kb-whisper-large` | any Whisper checkpoint |
+| `DICTATE_EN_MODEL` | `netease-youdao/Confucius4-R2T2` | any Qwen3-ASR checkpoint |
 | `DICTATE_STREAM_INTERVAL_SEC` | `1.0` | Whisper streaming pass interval. 0.5 types sooner, more errors |
 | `DICTATE_CHUNK_SEC` | `0.32` | R2T2 chunk size. 0.16 doesn't keep up on an M4 Max |
 | `DICTATE_MAX_NEW_TOKENS` | `32` | R2T2 token cap per chunk |
 
+### Swapping models
+
+The three slots each expect an architecture, and the worker checks the
+model's config before downloading anything. Put the wrong kind in and the
+menu shows the error instead of loading.
+
+- **Auto** and **Svenska** take any Whisper model (Hugging Face id or local
+  path). Smaller ones that work: `KBLab/kb-whisper-medium` (1.5 GB, a bit
+  worse on Swedish), `openai/whisper-large-v3` (slower, slightly better).
+- **English** takes any Qwen3-ASR model. `Qwen/Qwen3-ASR-1.7B` also works
+  but was worse on English than R2T2 in the benchmarks.
+
+### Pascal / older NVIDIA cards
+
+CUDA 13 dropped GTX 10xx (Pascal) and older. In `pyproject.toml`, change
+`cu130` to `cu126` in both the `[tool.uv.sources]` and `[[tool.uv.index]]`
+entries, then `uv lock && uv sync`. On Linux you'll also need that index, since
+PyPI's torch is CUDA 13 too — add `sys_platform == 'linux'` to the marker.
+
+## Troubleshooting
+
+- **Icon never leaves "loading"** — look at the terminal. The worker logs which
+  device it picked (`device cuda dtype bfloat16`) and any Python error.
+- **`device cpu` on a machine with a GPU** — CUDA: check `nvidia-smi` and the
+  driver version. MPS: `uv run python -c "import torch; print(torch.backends.mps.is_available())"`.
+- **Nothing typed, icon went red** — Accessibility permission (macOS), or
+  you're in a native Wayland window (Linux).
+- **`PortAudioError`** on Linux — `libportaudio2` isn't installed.
+- **Tray icon missing** on GNOME — install the AppIndicator extension.
+
+Errors show up in the menu, not just the terminal: on macOS the menu bar icon
+turns into ⚠️ and the error is a row in the menu; on Linux and Windows the dot
+turns red and the error is a row in the menu. On Windows the tray icon also has
+a hover tooltip with the current mode or the error — AppIndicator on Linux
+doesn't support one, so the menu is the only place to see it there.
+
 ## How it works
 
-- `menubar.py` — the menu bar app. Starts and kills the worker.
+- `app.py` — picks the tray implementation for the platform.
+- `config.py` — the `DICTATE_*` settings, see Settings.
+- `menubar.py` (rumps, macOS) and `tray.py` (pystray, elsewhere) — thin
+  views over `supervisor.py`, which starts and kills the worker and reads
+  its status lines.
 - `worker.py` — hotkey, microphone, and typing. In English mode text is typed
   as it settles and never revised while you talk; the tail gets flushed when
-  you release. The Whisper modes record until release, then type — or, with streaming
-  on, re-transcribe once a second and type what's stable.
+  you release. The Whisper modes record until release, then type — or, with
+  streaming on, re-transcribe once a second and type what's stable.
+- `sources.py` — the microphone as 16 kHz blocks, resampling if the OS
+  won't open the device at that rate.
+- `device.py` — cuda → mps → cpu, and which dtype to load in.
+- `models.py` — checks a slot's model is the right architecture.
 - `whisper.py` — runs Whisper directly, one 30 s window at a time, instead of
   through the transformers pipeline. The pipeline's long-form loop never
   exits when the model returns nothing, which KB-Whisper does on noise — one
   slip on the key would freeze dictation. Also drops low-confidence output,
   since Whisper invents a "Thank you." for silence.
-- `asr.py` — loads R2T2 on MPS. R2T2's streaming code only supports vLLM,
-  which doesn't run on a Mac, so this swaps in the transformers model behind
-  the one vLLM call the streaming code makes.
+- `asr.py` — loads R2T2. R2T2's streaming code only supports vLLM, which
+  doesn't run on a Mac, so this swaps in the transformers model behind the
+  one vLLM call the streaming code makes.
 - `r2t2_asr.py` — copied unchanged from the
-  [Confucius4-R2T2 repo](https://github.com/netease-youdao/Confucius4-R2T2)
-  (Apache-2.0). The package there depends on vLLM, so it can't be installed
-  here as-is.
-  Its license is in `LICENSE-r2t2`.
+  [Confucius4-R2T2 repo](https://github.com/netease-youdao/Confucius4-R2T2).
+  The package there depends on vLLM, so it can't be installed here as-is.
 
 ## Benchmarks
 
@@ -124,3 +245,13 @@ and 25 English FLEURS clips (needs `uv run --with pyarrow`), `bench.py` and
 output is in `bench/results/`. The `check_*.py` scripts run the worker and the
 menu with a fake keyboard, so changes can be tried without anything being typed
 into whatever app has focus. All of them run from inside `bench/`.
+
+## Licences
+
+- This code: MIT, see `LICENSE`.
+- `src/dictate/r2t2_asr.py`: Apache-2.0, NetEase Youdao, see `LICENSE-r2t2`.
+- The models are downloaded from Hugging Face on first use and aren't part of
+  this repo. Whisper large-v3-turbo is MIT, KB-Whisper is Apache-2.0, and the
+  Confucius4-R2T2 weights are under NetEase's
+  [model licence](https://github.com/netease-youdao/Confucius4-R2T2/blob/master/MODEL_LICENSE),
+  which you accept by downloading them.
