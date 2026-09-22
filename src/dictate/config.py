@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     # en: R2T2, types while you talk
     en_model: str = "netease-youdao/Confucius4-R2T2"
 
+    # auto picks cuda, then mps, then cpu. cpu works but is slow
+    device: str = "auto"
+
     # Whisper streaming: how often what you've said so far gets re-transcribed.
     # 0.5 types sooner but commits more wrong words
     stream_interval_sec: float = 1.0
