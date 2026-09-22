@@ -3,7 +3,6 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from functools import partial
 
 import pystray
 from PIL import Image, ImageDraw
@@ -64,7 +63,7 @@ class Tray:
             *[
                 pystray.MenuItem(
                     label,
-                    partial(sup.set_mode, mode),
+                    lambda *, m=mode: sup.set_mode(m),
                     checked=lambda item, m=mode: sup.mode == m,
                 )
                 for mode, (label, _) in MODES.items()
