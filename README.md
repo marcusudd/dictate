@@ -40,12 +40,17 @@ sudo apt install libportaudio2 python3-gi gir1.2-ayatanaappindicator3-0.1
 sudo dnf install portaudio python3-gobject libayatana-appindicator-gtk3
 ```
 
-PyGObject has no wheels, so the venv has to see the system copy:
+PyGObject has no wheels, so the venv has to see the system copy. That copy
+is built for the distro's own Python, so point uv at it — otherwise uv may
+pick a Python of its own that can't load it:
 
 ```
-uv venv --system-site-packages
+uv venv --system-site-packages --python /usr/bin/python3
 uv sync
 ```
+
+The distro Python has to be 3.12 or newer: Ubuntu 24.04+, Fedora 40+,
+Debian 13+.
 
 GNOME hides tray icons by default; install the AppIndicator shell extension.
 KDE and most others show them out of the box.
@@ -59,12 +64,15 @@ An NVIDIA driver 580 or newer if you have an NVIDIA card. `uv sync` fetches the
 CUDA build of PyTorch from pytorch.org (PyPI's Windows build is CPU-only).
 Nothing else.
 
+Windows on ARM (Snapdragon) isn't supported for now: there's no CUDA wheel for
+win_arm64, so `uv sync` fails.
+
 ## Run
 
 ```
 git clone https://github.com/marcusudd/dictate
 cd dictate
-uv sync            # Linux: after `uv venv --system-site-packages`
+uv sync            # Linux: after `uv venv --system-site-packages --python /usr/bin/python3`
 uv run dictate
 ```
 
@@ -74,7 +82,13 @@ shows a mic (macOS) or turns green (Linux/Windows) you're live: hold the
 hotkey while you talk, release when you're done.
 
 The hotkey is **right Option** on a Mac and **right Ctrl** elsewhere (right Alt
-is AltGr on Swedish PC keyboards). `DICTATE_HOTKEY` changes it.
+is AltGr on Swedish PC keyboards). `DICTATE_HOTKEY` changes it. Lots of
+2024+ Windows laptops have a Copilot key where right Ctrl used to be; pick
+another key in PowerShell like this:
+
+```
+$env:DICTATE_HOTKEY = "f9"; uv run dictate
+```
 
 While it's actually recording the icon goes red. That's not tied to the key:
 it lights when the first real samples arrive from the microphone, about 0.1 s
@@ -157,8 +171,10 @@ Under Wayland only apps running through XWayland can be typed into, and the
 hotkey is only seen while such an app has focus. A proper Wayland path
 (evdev for the key, ydotool for typing) would be a welcome PR.
 
-**Windows** needs nothing, except that a normal (non-admin) dictate can't type
-into windows running as administrator.
+**Windows** needs microphone access for desktop apps: Settings → Privacy &
+security → Microphone → "Let desktop apps access your microphone" has to be
+on, or the mic delivers silence and the icon never goes red. Also, a normal
+(non-admin) dictate can't type into windows running as administrator.
 
 ## Settings
 
@@ -194,10 +210,17 @@ CUDA 13 dropped GTX 10xx (Pascal) and older. In `pyproject.toml`, change
 entries, then `uv lock && uv sync`. On Linux you'll also need that index, since
 PyPI's torch is CUDA 13 too — add `sys_platform == 'linux'` to the marker.
 
+Cards older than RTX 30 have no native bfloat16, so English (R2T2) runs in
+float16 there. That's untested and may produce garbage. Auto and Svenska run
+float16 on every GPU anyway, so they're fine.
+
 ## Troubleshooting
 
-- **Icon never leaves "loading"** — look at the terminal. The worker logs which
-  device it picked (`device cuda dtype bfloat16`) and any Python error.
+- **Icon stays on "loading", or goes back to off/⚠️ on its own** — look at the
+  terminal. The worker logs which device it picked (`device cuda dtype
+  bfloat16`) and any Python error. A worker that crashes without saying why
+  (out of memory, a failed download) shows up in the menu as "worker stopped
+  (exit N), see the terminal".
 - **`device cpu` on a machine with a GPU** — CUDA: check `nvidia-smi` and the
   driver version. MPS: `uv run python -c "import torch; print(torch.backends.mps.is_available())"`.
 - **Nothing typed, icon went red** — Accessibility permission (macOS), or
