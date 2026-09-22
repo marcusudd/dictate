@@ -1,7 +1,7 @@
 [project]
 name = "dictate"
 version = "0.1.0"
-description = "Push-to-talk dictation in Swedish and English, running locally on your own GPU"
+description = "Push-to-talk dictation in Swedish and English, running locally on your own machine"
 readme = "README.md"
 license = "MIT"
 authors = [

@@ -14,8 +14,9 @@ Built on a Mac, being ported to Linux and Windows. Here's where that stands:
 | Windows, NVIDIA (CUDA) | Written, never run. |
 | Wayland | Not supported — see Permissions. |
 
-If you try it on something in the lower rows, please open an issue with what
-happened (OS, GPU, Python, and the terminal output), or send a PR.
+Found a bug, on any row? Open an issue with what happened: OS, GPU, Python
+version and the terminal output. PRs are welcome too, for fixes and for the
+gaps below.
 
 ## What you need
 
@@ -72,7 +73,16 @@ win_arm64, so `uv sync` fails.
 ```
 git clone https://github.com/marcusudd/dictate
 cd dictate
-uv sync            # Linux: after `uv venv --system-site-packages --python /usr/bin/python3`
+uv sync
+uv run dictate
+```
+
+On Linux, install the system packages above and create the venv on the distro
+Python first, then `uv sync`:
+
+```
+uv venv --system-site-packages --python /usr/bin/python3
+uv sync
 uv run dictate
 ```
 
@@ -153,6 +163,12 @@ accurate.
 
 Speak the wrong language into a single-language mode and it translates:
 Svenska turns English into Swedish, English turns Swedish into English.
+
+Auto has a milder version of the same problem. It decides the language from
+the first couple of seconds, and on a very short utterance — one or two words
+— it can land on English and translate your Swedish. Say a few words more and
+it gets it right. If you're only speaking Swedish, the Svenska mode skips the
+guessing and is more accurate anyway.
 
 ## Permissions
 
