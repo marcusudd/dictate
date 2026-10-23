@@ -18,7 +18,7 @@ dependencies = [
     # tray app: rumps is PyObjC, everything else gets pystray
     "rumps>=0.4.0; sys_platform == 'darwin'",
     "pystray>=0.19.5; sys_platform != 'darwin'",
-    "pillow>=10; sys_platform != 'darwin'",
+    "pillow>=13.0.0; sys_platform != 'darwin'",
 ]
 
 [project.scripts]
